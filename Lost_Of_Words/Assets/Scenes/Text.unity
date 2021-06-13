@@ -162,7 +162,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dfa85dd760ccd4c47a58be600d051a9b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  inkJSON: {fileID: 0}
+  inkJSON: {fileID: 4900000, guid: 0f96698d06f9d0b4e8cf1510321b5655, type: 3}
 --- !u!20 &519420031
 Camera:
   m_ObjectHideFlags: 0
