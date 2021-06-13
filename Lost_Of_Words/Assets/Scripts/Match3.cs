@@ -4,37 +4,233 @@ using UnityEngine;
 
 public class Match3 : MonoBehaviour
 {
+    // Declaring the variables for the scripts
     public ArrayLayout boardLayout;
 
+    // Game UI for game board and piece types
     [Header("UI Elements")]
+    [Tooltip("This is the array that holds all the sprites for the game")]
     public Sprite[] pieces;
+    [Tooltip("This is the main board for the game")]
     public RectTransform gameBoard;
-
+    [Tooltip("This is the board that will show the finished pieces for the game")]
+    public RectTransform killedBoard;
+    
+    // The pieces of the game board
     [Header("Prefabs")]
     public GameObject nodePiece;
+    public GameObject killedPiece;
 
+    // the dimensions of the game board  
     int width = 9;
     int height = 14;
+    int[] fills;
     Node[,] board;
+    public bool movedPiece = false;
 
+    [Header("Match3 Scoring")]
+    [Tooltip("This will change how much each match will give you to yout total score")]
+    public int matchPoints;
+
+    [Header("Pause Menu")]
+    public bool gameIsPaused;
+    public GameObject pauseMenu;
+
+    [Header("FillBar")]
+    [Tooltip("This will change how fast the fillbar will fill everytime you make a match")]
+    public float barFilled;
+    [Tooltip("This will change how much the maxfill from the GUIManager will change based on multiplying by this float")]
+    public float timesBar;
+    private float fillSpeed;
+
+    // The List for the updated board/flipped and the dead/Killed board  
+    List<NodePiece> update;
+    List<FlippedPieces> flipped;
+    List<NodePiece> dead;
+    List<KilledPiece> killed;
+
+    // Allowing some random in the game board
     System.Random random;
 
     // Start is called before the first frame update
     void Start()
     {
+        GUIManager.instance.filledBar = 0;
+        //pauseMenu = GameObject.Find("OptionsMenuBackGround");
         StartGame();
     }
 
+    private void Update()
+    {
+        fillSpeed = barFilled * Time.deltaTime;
+    }
+
+    // Update is called once per frame
+    void FixedUpdate()
+    {
+
+        GUIManager.instance.FillBar.fillAmount = Mathf.Lerp(GUIManager.instance.FillBar.fillAmount, GUIManager.instance.filledBar / GUIManager.instance.maxFill, fillSpeed);
+
+        List <NodePiece> finishedUpdating = new List<NodePiece>();
+        for(int i = 0; i < update.Count; i++)
+        {
+            NodePiece piece = update[i];
+            if (!piece.UpdatePiece()) finishedUpdating.Add(piece);
+        }
+        for (int i = 0; i < finishedUpdating.Count; i++)
+        {
+            NodePiece piece = finishedUpdating[i];
+            FlippedPieces flip = getFlipped(piece);
+            NodePiece flippedPiece = null;
+
+            int x = (int)piece.index.x;
+            fills[x] = Mathf.Clamp(fills[x] - 1, 0, width);
+
+            List<Point> connected = isConnected(piece.index, true);
+            bool wasFlipped = (flip != null);
+
+            if (wasFlipped) // if we flipped to make this update
+            {
+                flippedPiece = flip.getOtherPiece(piece);
+                AddPoints(ref connected, isConnected(flippedPiece.index, true));
+            }
+            if(connected.Count == 0) // if we didn't make a match
+            {
+                if (wasFlipped) // if we flipped
+                    FlipPieces(piece.index, flippedPiece.index, false); // Flip back
+                
+            }
+            else // if we made a match
+            {
+                foreach (Point pnt in connected) // Remove the node pieces connected
+                {
+                    //movedPiece = true;
+                    KillPiece(pnt);
+                    Node node = getNodeAtPoint(pnt);
+                    NodePiece nodePiece = node.getPiece();
+                    if(nodePiece != null)
+                    {
+                        nodePiece.gameObject.SetActive(false);
+                        dead.Add(nodePiece);
+                    }
+                    node.SetPiece(null);
+                }
+                ApplyGravityToBoard();
+
+            }
+
+            flipped.Remove(flip); // remove the flip after update
+            update.Remove(piece);
+        }
+    }
+
+    // This method will add gravity to the pieces in the board to make them fall when there is an empty space available
+
+    void ApplyGravityToBoard()
+    {
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = (height-1); y >= 0; y--)
+            {
+                Point p = new Point(x, y);
+                Node node = getNodeAtPoint(p);
+                int val = getValueAtPoint(p);
+                if (val != 0) continue; // If it is not a hole, do nothing
+                for(int ny = (y-1); ny >= -1; ny--)
+                {
+                    Point next = new Point(x, ny);
+                    int nextVal = getValueAtPoint(next);
+                    if (nextVal == 0)
+                        continue;
+                    if(nextVal != -1) // if we did not hit an end, but it's not 0 then use this to fill the current hole
+                    {
+                        Node got = getNodeAtPoint(next);
+                        NodePiece piece = got.getPiece();
+
+                        // Set the hole
+                        node.SetPiece(piece);
+                        update.Add(piece);
+
+                        //Replace the hole
+                        got.SetPiece(null);
+                    }
+                    else // Hit an end
+                    {
+                        // Fill in the hole
+                        int newVal = fillPiece();
+                        NodePiece piece;
+                        Point fallPnt = new Point(x, (-1 - fills[x]));
+                        if(dead.Count > 0)
+                        {
+                            NodePiece revived = dead[0];
+                            revived.gameObject.SetActive(true);
+                            piece = revived;
+
+                            dead.RemoveAt(0);
+                            
+                        }
+                        else
+                        {
+                            GameObject obj = Instantiate(nodePiece, gameBoard);
+                            NodePiece n = obj.GetComponent<NodePiece>();
+                            piece = n;
+                        }
+
+                        piece.Initialize(newVal, p, pieces[newVal - 1]);
+                        piece.rect.anchoredPosition = getPositionFromPoint(fallPnt);
+
+                        Node hole = getNodeAtPoint(p);
+                        hole.SetPiece(piece);
+                        ResetPiece(piece);
+                        fills[x]++;
+                        //Debug.Log("this is not working");
+                        movingPiece();
+                        GUIManager.instance.Score += matchPoints;
+                        updateScoreBar();
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+
+    
+    // This FlippedPieces method will allow the player to move pieces if there is a match
+    FlippedPieces getFlipped(NodePiece p)
+    {
+        FlippedPieces flip = null;
+        for (int i = 0; i < flipped.Count; i++)
+        {
+            if (flipped[i].getOtherPiece(p) != null)
+            {
+                flip = flipped[i];
+
+                break;
+            }
+        }
+        return flip;
+    }
+
+    // the method that gets called when the game is started
+
     void StartGame()
     {
+        fills = new int[width];
         string seed = getRandomSeed();
         random = new System.Random(seed.GetHashCode());
+        update = new List<NodePiece>();
+        flipped = new List<FlippedPieces>();
+        dead = new List<NodePiece>();
+        killed = new List<KilledPiece>();
+        
 
         InitializeBoard();
         VerifyBoard();
         InstantiateBoard();
     }
 
+    // Initializing the board at the start of the game
     void InitializeBoard()
     {
         board = new Node[width, height];
@@ -78,17 +274,83 @@ public class Match3 : MonoBehaviour
         {
             for(int y = 0; y < height; y++)
             {
-                int val = board[x, y].value;
+                Node node = getNodeAtPoint(new Point(x, y));
+                int val = node.value;
                 if (val <= 0) continue;
                 GameObject p = Instantiate(nodePiece, gameBoard);
-                NodePiece node = p.GetComponent<NodePiece>();
+                NodePiece piece = p.GetComponent<NodePiece>();
                 RectTransform rect = p.GetComponent<RectTransform>();
                 rect.anchoredPosition = new Vector2(32 + (64 * x), -32 - (64 * y));
-                node.Initialize(val, new Point(x, y), pieces[val - 1]);
+                piece.Initialize(val, new Point(x, y), pieces[val - 1]);
+                node.SetPiece(piece);
             }
         }
     }
 
+    // This method will return the selected piece back to the orginal place if the the piece does not match to the 
+
+    public void ResetPiece(NodePiece piece)
+    {
+        piece.ResetPosition();
+
+        update.Add(piece);
+    }
+
+    // This method will allow the player to move pieces if there is a match
+
+    public void FlipPieces(Point one, Point two, bool main)
+    {
+        if (getValueAtPoint(one) < 0) return;
+        Node nodeOne = getNodeAtPoint(one);
+        NodePiece pieceOne = nodeOne.getPiece();
+        if (getValueAtPoint(two) > 0)
+        {
+            Node nodeTwo = getNodeAtPoint(two);
+            NodePiece pieceTwo = nodeTwo.getPiece();
+            nodeOne.SetPiece(pieceTwo);
+            nodeTwo.SetPiece(pieceOne);
+            
+            if (main)
+            {
+                flipped.Add(new FlippedPieces(pieceOne, pieceTwo));
+                movedPiece = true;
+                //GUIManager.instance.Score += 50;
+            }
+            update.Add(pieceOne);
+            update.Add(pieceTwo);
+        }
+        else
+        {
+            ResetPiece(pieceOne);
+        }
+    }
+
+
+    // This method is called when the the player recives a match then the matched pieces will be added to the killedPiece list to be randomly
+    // to the the top of the game board
+    void KillPiece(Point p)
+    {
+        List<KilledPiece> available = new List<KilledPiece>();
+        for (int i = 0; i < killed.Count; i++)
+            if (!killed[i].falling) available.Add(killed[i]);
+
+        KilledPiece set = null;
+        if (available.Count > 0)
+            set = available[0];
+        else
+        {
+            GameObject kill = GameObject.Instantiate(killedPiece, killedBoard);
+            KilledPiece kPiece = kill.GetComponent<KilledPiece>();
+            set = kPiece;
+            killed.Add(kPiece);
+        }
+
+        int val = getValueAtPoint(p) - 1;
+        if (set != null && val >= 0 && val < pieces.Length)
+            set.Initialize(pieces[val], getPositionFromPoint(p));
+    }
+
+    // This sets up the montion to make the pieces move based on what direction the pointer is moving to 
     List<Point> isConnected(Point p, bool main)
     {
         List<Point> connected = new List<Point>();
@@ -104,7 +366,6 @@ public class Match3 : MonoBehaviour
         foreach(Point dir in directions) // Checking if there is 2 or more same shapes in the directions
         {
             List<Point> line = new List<Point>();
-
 
             int same = 0;
             for (int i = 1; i < 3; i++)
@@ -173,12 +434,17 @@ public class Match3 : MonoBehaviour
             }
         }
 
+        /* UNNESSASARY | REMOVE THIS!
+
         if (connected.Count > 0)
         {
             connected.Add(p);
         }
+        */
 
         return connected;
+
+
     }
 
     void AddPoints(ref List<Point> points, List<Point> add)
@@ -217,6 +483,11 @@ public class Match3 : MonoBehaviour
         board[p.x, p.y].value = v;
     }
 
+    Node getNodeAtPoint(Point p)
+    {
+        return board[p.x, p.y];
+    }
+
     int newValue(ref List<int> remove)
     {
         List<int> available = new List<int>();
@@ -224,16 +495,10 @@ public class Match3 : MonoBehaviour
             available.Add(i + 1);
         foreach (int i in remove)
             available.Remove(i);
-
         if (available.Count <= 0) return 0;
         return available[random.Next(0, available.Count)];
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
 
     string getRandomSeed()
     {
@@ -245,17 +510,117 @@ public class Match3 : MonoBehaviour
         }
         return seed;
     }
+
+    public Vector2 getPositionFromPoint(Point p)
+    {
+        return new Vector2(32 + (64 * p.x), -32 - (64 * p.y));
+    }
+
+    private void movingPiece()
+    {
+        //Debug.Log("Dropped");
+        
+        if (movedPiece)
+        {
+            movedPiece = false;
+            GUIManager.instance.MoveCounter--;
+        }
+        
+    }
+
+    private void updateScoreBar()
+    {
+        GUIManager.instance.filledBar = GUIManager.instance.Score;
+
+        while (GUIManager.instance.filledBar >= GUIManager.instance.maxFill)
+        {
+            if (GUIManager.instance.filledBar == GUIManager.instance.maxFill)
+            {
+                //GUIManager.instance.filledBar = 0;
+                GUIManager.instance.SpeechPoints++;
+                GUIManager.instance.maxFill *= timesBar;
+                //GUIManager.instance.SpeechPoints++;
+            }
+            GUIManager.instance.filledBar -= GUIManager.instance.maxFill;
+        }
+    }
+
+    public void pauseGame()
+    {
+        
+        gameIsPaused = !gameIsPaused;
+        // pausing the game will bring up the pause menu
+        if (gameIsPaused)
+        {
+            Time.timeScale = 0f;
+            pauseMenu.SetActive(true);
+            //GameScreen.SetActive(false);
+            //PauseScreen.SetActive(true);
+            //EventSystem.current.SetSelectedGameObject(null);
+            //EventSystem.current.SetSelectedGameObject(PauseButton);
+        }
+        else
+        {
+            pauseMenu.SetActive(false);
+            Time.timeScale = 1f;
+            //GameScreen.SetActive(true);
+            //PauseScreen.SetActive(false);
+            //PauseOptionsScreen.SetActive(false);
+        }
+    }
+
 }
 
-[System.Serializable]
+// This class sets up every pieces for the game 
+
+//[System.Serializable]
 public class Node
 {
     public int value; // 0 = blank, 1 = cube, 2 = sphere, 3 = cylinder, 4 = pryamid, 5 = diamond, -1 = hole
     public Point index;
+    NodePiece piece;
 
     public Node(int v, Point i)
     {
         value = v;
         index = i;
+    }
+
+    public void SetPiece(NodePiece p)
+    {
+        piece = p;
+        value = (piece == null) ? 0 : piece.value;
+        if (piece == null) return;
+        piece.SetIndex(index);
+    }
+
+    public NodePiece getPiece()
+    {
+        return piece;
+    }
+
+}
+
+// This class will allow the player to select one of the pieces on the board to flip
+
+[System.Serializable]
+public class FlippedPieces
+{
+    public NodePiece one;
+    public NodePiece two;
+
+    public FlippedPieces(NodePiece o, NodePiece t)
+    {
+        one = o; two = t;
+    }
+
+    public NodePiece getOtherPiece(NodePiece p)
+    {
+        if (p == one)
+            return two;
+        else if (p == two)
+            return one;
+        else
+            return null;
     }
 }
