@@ -14,14 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   SimpleSelectedItems:
     m_Keys:
-    - Assets/InkTextFiles.meta
-    - Assets/InkTextFiles/GameText.ink
-    - Assets/InkTextFiles/GameText.ink.meta
-    - Assets/InkTextFiles/GameText.json
-    - Assets/InkTextFiles/GameText.json.meta
-    - Assets/Scripts/TextInk.cs
+    - Assets/Scenes/Text.unity
     - 
-    m_Values: 00000000000000
+    m_Values: 0101
   RevisionSummary: 
   ChangesSearchValue: 
   SelectedHistoryRevision: 
