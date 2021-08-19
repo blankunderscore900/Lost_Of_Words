@@ -48,7 +48,7 @@ public class MenuActions : MonoBehaviour
 
     private void ShowMenu()
     {
-        BackScene = GameObject.FindGameObjectWithTag("Menu");
+        BackScene = GameObject.FindGameObjectWithTag("Game");
         BackScene.SetActive(false);
         MenuScene.SetActive(true);
     }

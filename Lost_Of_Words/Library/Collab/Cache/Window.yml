@@ -14,10 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   SimpleSelectedItems:
     m_Keys:
+    - Assets/Scenes/MainMenu.unity
     - 
-    m_Values: 01
-  RevisionSummary: Updated the MainMenu Scene to add the game content to the mainmenu
-    scene
+    m_Values: 0101
+  RevisionSummary: 
   ChangesSearchValue: 
   SelectedHistoryRevision: 
   HistoryPageNumber: 0
